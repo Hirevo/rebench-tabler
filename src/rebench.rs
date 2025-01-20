@@ -26,7 +26,7 @@ impl CandidateDataset {
         let mut dataset = BTreeMap::<String, Vec<f64>>::new();
         for line in iter {
             let items = (|| {
-                let mut iter = line.split_whitespace();
+                let mut iter = line.split('\t');
 
                 let _ = iter.next()?;
                 let _ = iter.next()?;
