@@ -6,10 +6,10 @@ description = "A statistical analysis tool of benchmarking datasets produced fro
 edition = "2021"
 
 [dependencies]
-colored = "2.0.0"
-prettytable-rs = "0.10.0"
-clap = { version = "4.4.8", features = ["derive"] }
-anyhow = "1.0.75"
-statrs = "0.16.0"
+colored = "3.0.0"
+clap = { version = "4.5.26", features = ["derive"] }
+anyhow = "1.0.95"
+statrs = "0.18.0"
+term-table = "1.4.0"
 
 [features]

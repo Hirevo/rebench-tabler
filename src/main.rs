@@ -1,19 +1,18 @@
 use std::cmp::Ordering;
 use std::path::Path;
-use std::str::FromStr;
 
 use anyhow::bail;
 use clap::{ArgAction, Parser, ValueEnum};
 use colored::Colorize;
-use prettytable::format::consts::FORMAT_NO_LINESEP_WITH_TITLE;
-use prettytable::format::Alignment;
-use prettytable::Cell;
-use prettytable::Row;
-use prettytable::Table;
+use term_table::row::Row;
+use term_table::table_cell::{Alignment, TableCell};
+use term_table::Table;
 
-use crate::rebench::CandidateDataset;
-
+mod format;
 mod rebench;
+
+use crate::format::TableStyle;
+use crate::rebench::CandidateDataset;
 
 #[derive(Debug, Clone, PartialEq, ValueEnum)]
 enum AnalysisMode {
@@ -25,27 +24,16 @@ enum AnalysisMode {
     Fastest,
 }
 
-impl FromStr for AnalysisMode {
-    type Err = anyhow::Error;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "difference" => Ok(Self::Difference),
-            "speedup" => Ok(Self::Speedup),
-            "fastest" => Ok(Self::Fastest),
-            _ => {
-                bail!("expected `difference` or `speedup`, got `{input}`");
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Parser)]
 #[command(about, author, version)]
 struct Opts {
-    /// Sets the kind of analysis to be performed with the benchmark data
+    /// The style for the table's separators
+    #[arg(long, default_value = "unicode")]
+    table_style: TableStyle,
+    /// The kind of analysis to be performed with the benchmark data
     #[arg(long, short)]
     mode: AnalysisMode,
-    /// Sets the threshold value (relative to the baseline) to signal an improvement or a regression (ignored if `--mode fastest`)
+    /// The threshold value (relative to the baseline) to signal an improvement or a regression (ignored if `--mode fastest`)
     #[arg(long, short, default_value = "0")]
     threshold: f64,
     /// The names to use for each dataset.
@@ -140,13 +128,14 @@ fn main() -> anyhow::Result<()> {
             .collect()
     });
 
-    let mut table = Table::new();
-    table.set_format(*FORMAT_NO_LINESEP_WITH_TITLE);
+    let mut table = Table::builder().style(opts.table_style.into()).build();
 
-    table.set_titles(Row::new(
-        std::iter::once(Cell::new("Benchmark"))
-            .chain(names.iter().map(|name| Cell::new(name.as_str())))
-            .collect(),
+    table.add_row(Row::new(
+        std::iter::once(TableCell::new("BENCHMARK".bold())).chain(
+            names
+                .iter()
+                .map(|name| TableCell::new(name.to_uppercase().bold())),
+        ),
     ));
 
     let [base, others @ ..] = datasets.as_slice() else {
@@ -158,9 +147,10 @@ fn main() -> anyhow::Result<()> {
         .map(|_| Vec::with_capacity(base.len()))
         .collect();
 
+    let mut first = true;
     for (bench, base_vals) in base.iter() {
         let mut cells = Vec::with_capacity(opts.datasets.len() + 1);
-        cells.push(Cell::new(bench.bold().to_string().as_str()));
+        cells.push(TableCell::new(bench.bold()));
 
         let ((base_avg, base_dev), (base_min, base_max)) = (
             (base_vals.mean(), base_vals.standard_deviation()),
@@ -174,7 +164,7 @@ fn main() -> anyhow::Result<()> {
             format!("{base_min:.2}").cyan().bold(),
             format!("{base_max:.2}").cyan().bold(),
         );
-        cells.push(Cell::new(base.as_str()));
+        cells.push(TableCell::new(base));
 
         let maybe_values = match opts.mode {
             AnalysisMode::Difference => others
@@ -202,7 +192,7 @@ fn main() -> anyhow::Result<()> {
                         format!("{min:.2}").cyan().bold(),
                         format!("{max:.2}").cyan().bold(),
                     );
-                    Some(Cell::new(diff.as_str()))
+                    Some(TableCell::new(diff))
                 })
                 .collect::<Option<Vec<_>>>(),
             AnalysisMode::Speedup => others
@@ -235,7 +225,7 @@ fn main() -> anyhow::Result<()> {
                         format!("{min:.2}").cyan().bold(),
                         format!("{max:.2}").cyan().bold(),
                     );
-                    Some(Cell::new(speedup.as_str()))
+                    Some(TableCell::new(speedup))
                 })
                 .collect::<Option<Vec<_>>>(),
             AnalysisMode::Fastest => others
@@ -287,7 +277,7 @@ fn main() -> anyhow::Result<()> {
                                 format!("{min:.2}").cyan().bold(),
                                 format!("{max:.2}").cyan().bold(),
                             );
-                            Cell::new(speedup.as_str())
+                            TableCell::new(speedup)
                         })
                         .collect()
                 }),
@@ -299,18 +289,24 @@ fn main() -> anyhow::Result<()> {
 
         cells.append(&mut values);
 
-        table.add_row(Row::new(cells));
+        table.add_row(if first {
+            Row::new(cells)
+        } else {
+            Row::without_separator(cells)
+        });
+
+        first = false;
     }
 
     match opts.mode {
         AnalysisMode::Speedup => {
-            table.add_empty_row();
             table.add_row(Row::new(
-                std::iter::once(Cell::new("Average Speedup".bold().to_string().as_str()))
-                    .chain(std::iter::once(Cell::new_align(
-                        "(baseline)".bold().to_string().as_str(),
-                        Alignment::CENTER,
-                    )))
+                std::iter::once(TableCell::new("Average Speedup".bold()))
+                    .chain(std::iter::once(
+                        TableCell::builder("(baseline)".bold())
+                            .alignment(Alignment::Center)
+                            .build(),
+                    ))
                     .chain(values.into_iter().map(|values| {
                         let ((speedup_avg, speedup_dev), (min, max)) = compute_average(&values);
                         let speedup = format!(
@@ -326,9 +322,8 @@ fn main() -> anyhow::Result<()> {
                             format!("{min:.2}").cyan().bold(),
                             format!("{max:.2}").cyan().bold(),
                         );
-                        Cell::new(speedup.as_str())
-                    }))
-                    .collect(),
+                        TableCell::new(speedup)
+                    })),
             ));
         }
         AnalysisMode::Fastest => {
@@ -348,13 +343,13 @@ fn main() -> anyhow::Result<()> {
                 })
                 .unwrap();
 
-            table.add_empty_row();
             table.add_row(Row::new(
-                std::iter::once(Cell::new("Average Speedup".bold().to_string().as_str()))
-                    .chain(std::iter::once(Cell::new_align(
-                        "(baseline)".bold().to_string().as_str(),
-                        Alignment::CENTER,
-                    )))
+                std::iter::once(TableCell::new("Average Speedup".bold()))
+                    .chain(std::iter::once(
+                        TableCell::builder("(baseline)".bold())
+                            .alignment(Alignment::Center)
+                            .build(),
+                    ))
                     .chain(values.into_iter().enumerate().map(
                         |(idx, ((speedup_avg, speedup_dev), (min, max)))| {
                             let speedup = format!(
@@ -370,16 +365,15 @@ fn main() -> anyhow::Result<()> {
                                 format!("{:.2}", min).cyan().bold(),
                                 format!("{:.2}", max).cyan().bold(),
                             );
-                            Cell::new(speedup.as_str())
+                            TableCell::new(speedup)
                         },
-                    ))
-                    .collect(),
+                    )),
             ));
         }
         _ => {}
     }
 
-    table.printstd();
+    println!("{}", table.render().trim());
 
     Ok(())
 }
