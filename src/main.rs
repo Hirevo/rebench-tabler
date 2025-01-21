@@ -131,11 +131,16 @@ fn main() -> anyhow::Result<()> {
     let mut table = Table::builder().style(opts.table_style.into()).build();
 
     table.add_row(Row::new(
-        std::iter::once(TableCell::new("BENCHMARK".bold())).chain(
-            names
-                .iter()
-                .map(|name| TableCell::new(name.to_uppercase().bold())),
-        ),
+        std::iter::once(
+            TableCell::builder("BENCHMARK".bold())
+                .alignment(Alignment::Center)
+                .build(),
+        )
+        .chain(names.iter().map(|name| {
+            TableCell::builder(name.to_uppercase().bold())
+                .alignment(Alignment::Center)
+                .build()
+        })),
     ));
 
     let [base, others @ ..] = datasets.as_slice() else {
