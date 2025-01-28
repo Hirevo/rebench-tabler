@@ -4,9 +4,7 @@ use std::path::Path;
 use anyhow::bail;
 use clap::{ArgAction, Parser, ValueEnum};
 use colored::Colorize;
-use term_table::row::Row;
-use term_table::table_cell::{Alignment, TableCell};
-use term_table::Table;
+use tableau::{Alignment, Cell, Row, Table};
 
 mod format;
 mod rebench;
@@ -128,20 +126,13 @@ fn main() -> anyhow::Result<()> {
             .collect()
     });
 
-    let mut table = Table::builder().style(opts.table_style.into()).build();
-
-    table.add_row(Row::new(
-        std::iter::once(
-            TableCell::builder("BENCHMARK".bold())
-                .alignment(Alignment::Center)
-                .build(),
-        )
-        .chain(names.iter().map(|name| {
-            TableCell::builder(name.to_uppercase().bold())
-                .alignment(Alignment::Center)
-                .build()
-        })),
-    ));
+    let mut table = Table::new().with_style(opts.table_style.into()).with_row(
+        Row::new()
+            .with_cell(Cell::new("BENCHMARK".bold()).with_alignment(Alignment::Center))
+            .with_cells(names.iter().map(|name| {
+                Cell::new(name.to_uppercase().bold()).with_alignment(Alignment::Center)
+            })),
+    );
 
     let [base, others @ ..] = datasets.as_slice() else {
         bail!("at least one dataset must be passed");
@@ -154,8 +145,9 @@ fn main() -> anyhow::Result<()> {
 
     let mut first = true;
     for (bench, base_vals) in base.iter() {
-        let mut cells = Vec::with_capacity(opts.datasets.len() + 1);
-        cells.push(TableCell::new(bench.bold()));
+        let mut row = Row::new();
+        row.cells.reserve(opts.datasets.len() + 1);
+        row.cells.push(Cell::new(bench.bold()));
 
         let ((base_avg, base_dev), (base_min, base_max)) = (
             (base_vals.mean(), base_vals.standard_deviation()),
@@ -169,7 +161,7 @@ fn main() -> anyhow::Result<()> {
             format!("{base_min:.2}").cyan().bold(),
             format!("{base_max:.2}").cyan().bold(),
         );
-        cells.push(TableCell::new(base));
+        row.cells.push(Cell::new(base));
 
         let maybe_values = match opts.mode {
             AnalysisMode::Difference => others
@@ -197,7 +189,7 @@ fn main() -> anyhow::Result<()> {
                         format!("{min:.2}").cyan().bold(),
                         format!("{max:.2}").cyan().bold(),
                     );
-                    Some(TableCell::new(diff))
+                    Some(Cell::new(diff))
                 })
                 .collect::<Option<Vec<_>>>(),
             AnalysisMode::Speedup => others
@@ -230,7 +222,7 @@ fn main() -> anyhow::Result<()> {
                         format!("{min:.2}").cyan().bold(),
                         format!("{max:.2}").cyan().bold(),
                     );
-                    Some(TableCell::new(speedup))
+                    Some(Cell::new(speedup))
                 })
                 .collect::<Option<Vec<_>>>(),
             AnalysisMode::Fastest => others
@@ -282,7 +274,7 @@ fn main() -> anyhow::Result<()> {
                                 format!("{min:.2}").cyan().bold(),
                                 format!("{max:.2}").cyan().bold(),
                             );
-                            TableCell::new(speedup)
+                            Cell::new(speedup)
                         })
                         .collect()
                 }),
@@ -292,27 +284,22 @@ fn main() -> anyhow::Result<()> {
             bail!("discarded bench due to missing data (benchmark: {bench})");
         };
 
-        cells.append(&mut values);
+        row.cells.append(&mut values);
 
-        table.add_row(if first {
-            Row::new(cells)
-        } else {
-            Row::without_separator(cells)
-        });
+        table
+            .rows
+            .push(if first { row } else { row.without_top_border() });
 
         first = false;
     }
 
     match opts.mode {
         AnalysisMode::Speedup => {
-            table.add_row(Row::new(
-                std::iter::once(TableCell::new("Average Speedup".bold()))
-                    .chain(std::iter::once(
-                        TableCell::builder("(baseline)".bold())
-                            .alignment(Alignment::Center)
-                            .build(),
-                    ))
-                    .chain(values.into_iter().map(|values| {
+            table.rows.push(
+                Row::new()
+                    .with_cell(Cell::new("Average Speedup".bold()))
+                    .with_cell(Cell::new("(baseline)".bold()).with_alignment(Alignment::Center))
+                    .with_cells(values.into_iter().map(|values| {
                         let ((speedup_avg, speedup_dev), (min, max)) = compute_average(&values);
                         let speedup = format!(
                             "{} ± {} ({}..{})",
@@ -327,9 +314,9 @@ fn main() -> anyhow::Result<()> {
                             format!("{min:.2}").cyan().bold(),
                             format!("{max:.2}").cyan().bold(),
                         );
-                        TableCell::new(speedup)
+                        Cell::new(speedup)
                     })),
-            ));
+            );
         }
         AnalysisMode::Fastest => {
             let values: Vec<_> = values
@@ -348,14 +335,11 @@ fn main() -> anyhow::Result<()> {
                 })
                 .unwrap();
 
-            table.add_row(Row::new(
-                std::iter::once(TableCell::new("Average Speedup".bold()))
-                    .chain(std::iter::once(
-                        TableCell::builder("(baseline)".bold())
-                            .alignment(Alignment::Center)
-                            .build(),
-                    ))
-                    .chain(values.into_iter().enumerate().map(
+            table.rows.push(
+                Row::new()
+                    .with_cell(Cell::new("Average Speedup".bold()))
+                    .with_cell(Cell::new("(baseline)".bold()).with_alignment(Alignment::Center))
+                    .with_cells(values.into_iter().enumerate().map(
                         |(idx, ((speedup_avg, speedup_dev), (min, max)))| {
                             let speedup = format!(
                                 "{} ± {} ({}..{})",
@@ -370,15 +354,15 @@ fn main() -> anyhow::Result<()> {
                                 format!("{:.2}", min).cyan().bold(),
                                 format!("{:.2}", max).cyan().bold(),
                             );
-                            TableCell::new(speedup)
+                            Cell::new(speedup)
                         },
                     )),
-            ));
+            );
         }
         _ => {}
     }
 
-    println!("{}", table.render().trim());
+    println!("{}", table.render());
 
     Ok(())
 }

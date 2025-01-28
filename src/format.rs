@@ -1,4 +1,5 @@
 use clap::ValueEnum;
+use tableau::Style;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum TableStyle {
@@ -7,10 +8,10 @@ pub enum TableStyle {
     Unicode,
 }
 
-impl Into<term_table::TableStyle> for TableStyle {
-    fn into(self) -> term_table::TableStyle {
+impl Into<Style> for TableStyle {
+    fn into(self) -> Style {
         match self {
-            TableStyle::Ascii => term_table::TableStyle {
+            TableStyle::Ascii => Style {
                 top_left_corner: '+',
                 top_right_corner: '+',
                 bottom_left_corner: '+',
@@ -23,7 +24,7 @@ impl Into<term_table::TableStyle> for TableStyle {
                 vertical: '|',
                 horizontal: '-',
             },
-            TableStyle::Unicode => term_table::TableStyle {
+            TableStyle::Unicode => Style {
                 top_left_corner: '╭',
                 top_right_corner: '╮',
                 bottom_left_corner: '╰',
